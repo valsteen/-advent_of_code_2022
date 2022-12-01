@@ -4,7 +4,7 @@ use std::iter::once;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let lines = stdin().lock().lines();
-    let (sum_top_three, _) = lines.flatten().chain(once(String::new())).try_fold(
+    let (top_three, _) = lines.flatten().chain(once(String::new())).try_fold(
         (vec![], 0),
         |(mut result, current), line| {
             if line.is_empty() {
@@ -19,6 +19,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         },
     )?;
-    println!("{}", sum_top_three.iter().sum::<usize>());
+    println!("{}", top_three.iter().sum::<usize>());
     Ok(())
 }
