@@ -18,6 +18,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                 if n == 0 {
                     let mut filtered = known.iter().filter(|(_, count)| **count == 3);
                     let badge = *filtered.next().ok_or("No candidate was found")?.0;
+                    if filtered.next().is_some() {
+                        Err("More than one candidate was found")?
+                    }
                     let base = match badge {
                         'a'..='z' => 96,
                         'A'..='Z' => 38,
@@ -26,9 +29,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                     score += u8::try_from(badge)
                         .map(|c| c as usize - base)
                         .map_err(|_| "Invalid char")?;
-                    if filtered.next().is_some() {
-                        Err("More than one candidate was found")?
-                    }
                     known.clear()
                 }
                 Ok::<_, Box<dyn Error>>((n, score, known))
