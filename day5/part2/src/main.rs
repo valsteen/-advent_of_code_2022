@@ -1,8 +1,11 @@
+use recap::Recap;
+use serde::Deserialize;
 use std::collections::VecDeque;
 use std::error::Error;
 use std::io::{stdin, BufRead};
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Recap)]
+#[recap(regex = r"^move (?P<repeat>[0-9]+) from (?P<source>[0-9]+) to (?P<destination>[0-9]+)$")]
 struct Move {
     repeat: usize,
     source: usize,
@@ -14,10 +17,6 @@ type Stacks = Vec<VecDeque<String>>;
 fn parse_input() -> Result<(Stacks, Vec<Move>), Box<dyn Error>> {
     let crates_re = regex::Regex::new(r"(?P<empty>    ?)|\[(?P<label>\w)\] ?")?;
     let lanes_re = regex::Regex::new(r"(?P<lane>[0-9]+)")?;
-    let move_re = regex::Regex::new(
-        r"^move (?P<repeat>[0-9]+) from (?P<source>[0-9]+) to (?P<destination>[0-9]+)$",
-    )?;
-
     let lines = stdin().lock().lines().flatten().collect::<Vec<String>>();
     let mut stacks = Vec::<VecDeque<String>>::new();
     let mut idx = 0;
@@ -66,38 +65,8 @@ fn parse_input() -> Result<(Stacks, Vec<Move>), Box<dyn Error>> {
     let moves = lines
         .iter()
         .skip(idx + 2)
-        .map(|line| {
-            let mut captures = move_re.captures_iter(line);
-            let cap = captures.next().ok_or("Unexpected format")?;
-            let repeat = cap
-                .name("repeat")
-                .ok_or("invalid format: missing repeat")?
-                .as_str()
-                .parse::<usize>()?;
-            let source = cap
-                .name("source")
-                .ok_or("invalid format: missing source")?
-                .as_str()
-                .parse::<usize>()?
-                - 1;
-            let destination = cap
-                .name("destination")
-                .ok_or("invalid format: missing destination")?
-                .as_str()
-                .parse::<usize>()?
-                - 1;
-
-            if captures.next().is_some() {
-                Err("Unexpected trailing content")?
-            }
-            Ok(Move {
-                repeat,
-                source,
-                destination,
-            })
-        })
-        .collect::<Result<Vec<Move>, Box<dyn Error>>>()?;
-
+        .map(|line| line.parse())
+        .collect::<Result<Vec<Move>, _>>()?;
     Ok((stacks, moves))
 }
 
@@ -105,14 +74,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (mut stacks, moves) = parse_input()?;
     for mov in moves {
         let stack = {
-            let source = stacks.get_mut(mov.source).ok_or("unknown lane")?;
+            let source = stacks.get_mut(mov.source - 1).ok_or("unknown lane")?;
             if mov.repeat > source.len() {
                 Err("Too many crates to move")?
             }
             source.split_off(source.len() - mov.repeat)
         };
         stacks
-            .get_mut(mov.destination)
+            .get_mut(mov.destination - 1)
             .ok_or("unknown lane")?
             .extend(stack);
     }
