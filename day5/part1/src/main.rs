@@ -109,13 +109,12 @@ fn main() -> Result<(), Box<dyn Error>> {
             if mov.repeat > source.len() {
                 Err("Too many crates to move")?
             }
-            let take = source.split_off(source.len() - mov.repeat);
-            take.into_iter().rev().collect::<Vec<String>>()
+            source.split_off(source.len() - mov.repeat)
         };
         stacks
             .get_mut(mov.destination)
             .ok_or("unknown lane")?
-            .extend(stack);
+            .extend(stack.into_iter().rev());
     }
 
     let result = stacks.iter().try_fold(String::new(), |result, stack| {

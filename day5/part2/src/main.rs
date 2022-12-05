@@ -109,8 +109,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             if mov.repeat > source.len() {
                 Err("Too many crates to move")?
             }
-            let take = source.split_off(source.len() - mov.repeat);
-            take.into_iter().collect::<Vec<String>>()
+            source.split_off(source.len() - mov.repeat)
         };
         stacks
             .get_mut(mov.destination)
