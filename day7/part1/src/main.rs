@@ -42,11 +42,11 @@ impl FromStr for Line {
     type Err = recap::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ls::from_str(s)
+        s.parse()
             .map(Self::Ls)
-            .or_else(|_| Cd::from_str(s).map(Self::Cd))
-            .or_else(|_| Dir::from_str(s).map(Self::Dir))
-            .or_else(|_| File::from_str(s).map(Self::File))
+            .or_else(|_| s.parse().map(Self::Cd))
+            .or_else(|_| s.parse().map(Self::Dir))
+            .or_else(|_| s.parse().map(Self::File))
     }
 }
 
