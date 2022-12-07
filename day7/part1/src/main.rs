@@ -61,8 +61,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let result = lines.flatten().map(|line| line.parse()).try_fold(
         State::default(),
         |mut state, line| {
-            let line = line?;
-            match line {
+            match line? {
                 Line::Dir(_) | Line::Ls(_) => (),
                 Line::Cd(cd) => match cd.name.as_str() {
                     ".." => {
