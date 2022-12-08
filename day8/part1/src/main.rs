@@ -1,4 +1,3 @@
-use std::convert::identity;
 use std::error::Error;
 use std::io::{stdin, BufRead};
 
