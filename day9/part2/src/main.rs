@@ -2,28 +2,28 @@ use std::collections::HashSet;
 use std::error::Error;
 use std::io::{stdin, BufRead};
 
-struct State {
+struct State<const LEN: usize> {
     visited: HashSet<(isize, isize)>,
-    head: (isize, isize),
-    tail: (isize, isize),
+    knots: [(isize, isize);LEN],
 }
 
-impl Default for State {
+impl <const LEN: usize> Default for State<LEN> {
     fn default() -> Self {
         let visited = HashSet::from_iter([(0, 0)]);
         Self {
             visited,
-            head: (0, 0),
-            tail: (0, 0),
+            knots: [(0,0); LEN],
         }
     }
 }
+
+const LEN : usize = 10 ;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let lines = stdin().lock().lines();
     let state = lines
         .flatten()
-        .try_fold(State::default(), |mut state, line| {
+        .try_fold(State::<LEN>::default(), |mut state, line| {
             let bytes = line.as_bytes();
             bytes.get(1).filter(|c| **c == b' ').ok_or("invalid line")?;
             let steps: usize = line.get(2..).ok_or("invalid line")?.parse()?;
@@ -35,16 +35,23 @@ fn main() -> Result<(), Box<dyn Error>> {
                 _ => Err("invalid line")?,
             };
             for _ in 0..steps {
-                state.head.0 += direction.0;
-                state.head.1 += direction.1;
-                let dx = state.head.0 - state.tail.0;
-                let dy = state.head.1 - state.tail.1;
-                if dx.abs() > 1 || dy.abs() > 1 {
-                    state.tail.0 += dx.abs().min(1) * dx.signum();
-                    state.tail.1 += dy.abs().min(1) * dy.signum();
+                state.knots[0].0 += direction.0;
+                state.knots[0].1 += direction.1;
+
+                for i in 1..LEN {
+                    let previous = state.knots[i-1];
+                    let current = &mut state.knots[i];
+
+                    let dx = previous.0 - current.0;
+                    let dy = previous.1 - current.1;
+                    if dx.abs() > 1 || dy.abs() > 1 {
+                        current.0 += dx.abs().min(1) * dx.signum();
+                        current.1 += dy.abs().min(1) * dy.signum();
+                    }
                 }
-                state.visited.insert(state.tail);
+                state.visited.insert(*state.knots.last().unwrap());
             }
+
             Ok::<_, Box<dyn Error>>(state)
         })?;
 
