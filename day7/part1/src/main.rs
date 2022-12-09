@@ -58,9 +58,10 @@ struct State {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let lines = stdin().lock().lines();
-    let result = lines.flatten().map(|line| line.parse()).try_fold(
-        State::default(),
-        |mut state, line| {
+    let result = lines
+        .flatten()
+        .map(|line| line.parse())
+        .try_fold(State::default(), |mut state, line| {
             match line? {
                 Line::Dir(_) | Line::Ls(_) => (),
                 Line::Cd(cd) => match cd.name.as_str() {
@@ -71,17 +72,19 @@ fn main() -> Result<(), Box<dyn Error>> {
                 },
                 Line::File(file) => {
                     for parts in 0..=state.curdir.len() {
-                        let size = state
+                        *state
                             .dirsizes
                             .entry(state.curdir[..parts].join("/"))
-                            .or_default();
-                        *size += file.size
+                            .or_default() += file.size
                     }
                 }
             };
             Ok::<_, Box<dyn Error>>(state)
-        },
-    )?.dirsizes.iter().filter_map(|(_, size)| (*size <= 100000).then_some(*size)).sum::<usize>();
+        })?
+        .dirsizes
+        .iter()
+        .filter_map(|(_, size)| (*size <= 100000).then_some(*size))
+        .sum::<usize>();
 
     println!("{:?}", result);
     Ok(())

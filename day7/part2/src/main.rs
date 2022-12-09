@@ -71,11 +71,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                 },
                 Line::File(file) => {
                     for parts in 0..=state.curdir.len() {
-                        let size = state
+                        *state
                             .dirsizes
                             .entry(state.curdir[..parts].join("/"))
-                            .or_default();
-                        *size += file.size
+                            .or_default() += file.size
                     }
                 }
             };
