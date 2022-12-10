@@ -80,10 +80,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             (*execution, *x) = if let Some(execution) = execution.take() {
                 execution
             } else {
-                match instructions.next() {
-                    Some(Ok(instruction)) => Execution::new(instruction),
-                    Some(Err(e)) => return Some(Err(e)),
-                    None => return None,
+                match instructions.next()? {
+                    Ok(instruction) => Execution::new(instruction),
+                    Err(e) => return Some(Err(e)),
                 }
             }
             .execute(*x);
