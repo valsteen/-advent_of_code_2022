@@ -2,7 +2,7 @@ use recap::Recap;
 use serde::Deserialize;
 use std::error::Error;
 use std::io::{stdin, BufRead};
-use std::ops::ControlFlow;
+use std::mem;
 use std::str::FromStr;
 
 #[derive(Debug, Deserialize, Recap)]
@@ -67,53 +67,65 @@ impl Execution {
 }
 
 struct State<T: Iterator<Item = Result<Instruction, Box<dyn Error>>>> {
-    next_inspection: usize,
+    current_line: String,
     instructions: T,
     current_execution: Option<Execution>,
-    sum: isize,
     x: isize,
+}
+
+enum Iteration {
+    Error(Box<dyn Error>),
+    Continue,
+    Display(String),
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     let lines = stdin().lock().lines().flatten();
 
-    let result = (2..).try_fold(
+    let compute = (0..).scan(
         State {
-            next_inspection: 20,
+            current_line: String::new(),
             instructions: lines.map(|line| line.parse::<Instruction>()),
             current_execution: None,
-            sum: 0,
-            x: 1,
+            x: 0,
         },
-        |mut state, cycles| {
-            let (execution, next) = if let Some(execution) = state.current_execution {
+        |state, _| {
+            state.current_line +=
+                if (state.x..=state.x + 2).contains(&(state.current_line.len() as isize)) {
+                    "#"
+                } else {
+                    " "
+                };
+
+            let (execution, next) = if let Some(execution) = state.current_execution.take() {
                 execution
             } else {
                 match state.instructions.next() {
                     Some(Ok(instruction)) => Execution::new(instruction),
-                    Some(Err(e)) => return ControlFlow::Break(Err(e)),
-                    None => return ControlFlow::Break(Ok(state.sum)),
+                    Some(Err(e)) => return Some(Iteration::Error(e)),
+                    None => return None,
                 }
             }
             .execute(state.x);
-            state.x = next;
             state.current_execution = execution;
+            state.x = next;
 
-            if cycles == state.next_inspection {
-                state.next_inspection += 40;
-                state.sum += cycles as isize * state.x;
+            if state.current_line.len() == 40 {
+                Some(Iteration::Display(mem::take(&mut state.current_line)))
+            } else {
+                Some(Iteration::Continue)
             }
-
-            ControlFlow::Continue(state)
         },
     );
 
-    match result {
-        ControlFlow::Continue(_) => Err("Program unexpectedly halted")?,
-        ControlFlow::Break(Ok(sum)) => {
-            println!("{}", sum);
-            Ok(())
+    for iteration in compute {
+        match iteration {
+            Iteration::Error(err) => Err(err)?,
+            Iteration::Continue => (),
+            Iteration::Display(line) => {
+                println!("{}", line);
+            }
         }
-        ControlFlow::Break(Err(err)) => Err(err)?,
     }
+    Ok(())
 }
