@@ -65,40 +65,28 @@ impl Execution {
     }
 }
 
-struct State<T: Iterator<Item = Result<Instruction, Box<dyn Error>>>> {
-    instructions: T,
-    current_execution: Option<Execution>,
-    x: isize,
-}
-
 fn main() -> Result<(), Box<dyn Error>> {
     let lines = stdin().lock().lines().flatten();
 
     let compute = (0..).scan(
-        State {
-            instructions: lines.map(|line| line.parse::<Instruction>()),
-            current_execution: None,
-            x: 0,
-        },
-        |state, pos| {
-            let result = if (state.x..=state.x + 2).contains(&(pos % 40_isize)) {
-                "#"
+        (lines.map(|line| line.parse::<Instruction>()), None, 0),
+        |(instructions, execution, x), pos| {
+            let result = if (*x..=*x + 2).contains(&(pos % 40_isize)) {
+                b'#'
             } else {
-                "."
+                b' '
             };
 
-            let (execution, next) = if let Some(execution) = state.current_execution.take() {
+            (*execution, *x) = if let Some(execution) = execution.take() {
                 execution
             } else {
-                match state.instructions.next() {
+                match instructions.next() {
                     Some(Ok(instruction)) => Execution::new(instruction),
                     Some(Err(e)) => return Some(Err(e)),
                     None => return None,
                 }
             }
-            .execute(state.x);
-            state.current_execution = execution;
-            state.x = next;
+            .execute(*x);
 
             Some(Ok(result))
         },
@@ -108,7 +96,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         if pos % 40 == 0 {
             println!()
         }
-        print!("{}", iteration?);
+        print!("{}", char::from(iteration?));
     }
     Ok(())
 }
