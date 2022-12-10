@@ -2,7 +2,6 @@ use recap::Recap;
 use serde::Deserialize;
 use std::error::Error;
 use std::io::{stdin, BufRead};
-use std::mem;
 use std::str::FromStr;
 
 #[derive(Debug, Deserialize, Recap)]
@@ -67,16 +66,9 @@ impl Execution {
 }
 
 struct State<T: Iterator<Item = Result<Instruction, Box<dyn Error>>>> {
-    current_line: String,
     instructions: T,
     current_execution: Option<Execution>,
     x: isize,
-}
-
-enum Iteration {
-    Error(Box<dyn Error>),
-    Continue,
-    Display(String),
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -84,25 +76,23 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let compute = (0..).scan(
         State {
-            current_line: String::new(),
             instructions: lines.map(|line| line.parse::<Instruction>()),
             current_execution: None,
             x: 0,
         },
-        |state, _| {
-            state.current_line +=
-                if (state.x..=state.x + 2).contains(&(state.current_line.len() as isize)) {
-                    "#"
-                } else {
-                    " "
-                };
+        |state, pos| {
+            let result = if (state.x..=state.x + 2).contains(&(pos % 40_isize)) {
+                "#"
+            } else {
+                "."
+            };
 
             let (execution, next) = if let Some(execution) = state.current_execution.take() {
                 execution
             } else {
                 match state.instructions.next() {
                     Some(Ok(instruction)) => Execution::new(instruction),
-                    Some(Err(e)) => return Some(Iteration::Error(e)),
+                    Some(Err(e)) => return Some(Err(e)),
                     None => return None,
                 }
             }
@@ -110,22 +100,15 @@ fn main() -> Result<(), Box<dyn Error>> {
             state.current_execution = execution;
             state.x = next;
 
-            if state.current_line.len() == 40 {
-                Some(Iteration::Display(mem::take(&mut state.current_line)))
-            } else {
-                Some(Iteration::Continue)
-            }
+            Some(Ok(result))
         },
     );
 
-    for iteration in compute {
-        match iteration {
-            Iteration::Error(err) => Err(err)?,
-            Iteration::Continue => (),
-            Iteration::Display(line) => {
-                println!("{}", line);
-            }
+    for (pos, iteration) in compute.enumerate() {
+        if pos % 40 == 0 {
+            println!()
         }
+        print!("{}", iteration?);
     }
     Ok(())
 }
