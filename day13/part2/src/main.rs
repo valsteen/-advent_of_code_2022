@@ -5,10 +5,12 @@ use std::{cmp::Ordering, error::Error, io::stdin, io::BufRead, num::ParseIntErro
 use nom::branch::alt;
 use nom::character::complete::{char, digit1};
 use nom::combinator::{cut, map, map_res};
-use nom::error::{context, ContextError, FromExternalError, ParseError, VerboseError};
+use nom::error::{
+    context, convert_error, ContextError, FromExternalError, ParseError, VerboseError,
+};
 use nom::multi::separated_list0;
 use nom::sequence::{preceded, terminated};
-use nom::IResult;
+use nom::{Finish, IResult};
 
 #[derive(Debug, Clone)]
 enum Expression {
@@ -79,21 +81,15 @@ impl Ord for Expression {
 }
 
 fn parse(input: &str) -> Result<Expression, Box<dyn Error>> {
-    match expression::<VerboseError<_>>(input) {
-        Ok((s, e)) => {
-            if !s.is_empty() {
-                Err(format!("trailing content: {}", s).into())
-            } else {
-                Ok(e)
-            }
-        }
-        Err(e) => Err(format!("parsing error: {}", e).into()),
+    match expression::<VerboseError<_>>(input).finish() {
+        Ok((s, _)) if !s.is_empty() => Err(format!("trailing content: {}", s).into()),
+        Ok((_, e)) => Ok(e),
+        Err(e) => Err(convert_error(input, e).into()),
     }
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn solve() -> Result<(), Box<dyn Error>> {
     let lines = stdin().lock().lines();
-
     let dividers = ["[[2]]", "[[6]]"]
         .into_iter()
         .map(parse)
@@ -125,4 +121,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     println!("{}", score);
     Ok(())
+}
+
+fn main() {
+    if let Err(e) = solve() {
+        println!("{}", e);
+    }
 }
