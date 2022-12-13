@@ -1,57 +1,47 @@
-use std::cmp::Ordering;
-use std::error::Error;
-use std::io::{stdin, BufRead};
-use std::str::FromStr;
+extern crate core;
+
+use std::{cmp::Ordering, error::Error, io::stdin, io::BufRead, num::ParseIntError};
+
+use nom::branch::alt;
+use nom::character::complete::{char, digit1};
+use nom::combinator::{cut, map, map_res};
+use nom::error::{context, ContextError, FromExternalError, ParseError, VerboseError};
+use nom::multi::separated_list0;
+use nom::sequence::{preceded, terminated};
+use nom::IResult;
 
 #[derive(Debug, Clone)]
 enum Expression {
-    List(Vec<Expression>),
-    Item(usize),
+    Array(Vec<Expression>),
+    Item(u8),
 }
 
-impl Expression {
-    fn parse(mut input: &[u8]) -> Result<(Expression, &[u8]), &'static str> {
-        if input.is_empty() {
-            return Err("empty string");
-        }
+trait ExpressionParseError<'a>:
+    ParseError<&'a str> + ContextError<&'a str> + FromExternalError<&'a str, ParseIntError>
+{
+}
 
-        match input[0] {
-            b'[' => {
-                let mut result = Vec::new();
-                loop {
-                    if input[1] == b']' {
-                        return Ok((Expression::List(Vec::new()), &input[2..]));
-                    }
-                    let (sub, rest) = Self::parse(&input[1..])?;
-                    input = rest;
-                    if input.is_empty() {
-                        Err("Unexpected end of expression")?
-                    }
-                    result.push(sub);
-                    match input[0] {
-                        b',' => {
-                            continue;
-                        }
-                        b']' => return Ok((Expression::List(result), &input[1..])),
-                        _ => return Err("unexpected character"),
-                    }
-                }
-            }
-            b'0'..=b'9' => {
-                let mut res = 0;
+impl<'a> ExpressionParseError<'a> for VerboseError<&'a str> {}
 
-                loop {
-                    res = res * 10 + (input[0] - b'0') as usize;
-                    input = &input[1..];
-                    if input.is_empty() || !(b'0'..=b'9').contains(&input[0]) {
-                        break;
-                    }
-                }
-                Ok((Expression::Item(res), input))
-            }
-            _ => Err("invalid character"),
-        }
-    }
+fn number<'a, E: ExpressionParseError<'a>>(i: &'a str) -> IResult<&'a str, u8, E> {
+    map_res(digit1, |s: &str| s.parse::<u8>())(i)
+}
+
+fn expression<'a, E: ExpressionParseError<'a>>(i: &'a str) -> IResult<&'a str, Expression, E> {
+    alt((map(array, Expression::Array), map(number, Expression::Item)))(i)
+}
+
+fn array<'a, E: ExpressionParseError<'a>>(i: &'a str) -> IResult<&'a str, Vec<Expression>, E> {
+    context(
+        "array",
+        preceded(
+            char('['),
+            cut(terminated(
+                separated_list0(char(','), expression),
+                char(']'),
+            )),
+        ),
+    )(i)
 }
 
 impl Eq for Expression {}
@@ -72,9 +62,9 @@ impl Ord for Expression {
     fn cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
             (Self::Item(left), Self::Item(right)) => left.cmp(right),
-            (Self::Item(left), Self::List(_)) => Self::List(vec![Self::Item(*left)]).cmp(other),
-            (Self::List(_), Self::Item(right)) => self.cmp(&Self::List(vec![Self::Item(*right)])),
-            (Self::List(left), Self::List(right)) => {
+            (Self::Item(left), Self::Array(_)) => Self::Array(vec![Self::Item(*left)]).cmp(other),
+            (Self::Array(_), Self::Item(right)) => self.cmp(&Self::Array(vec![Self::Item(*right)])),
+            (Self::Array(left), Self::Array(right)) => {
                 for (left, right) in left.iter().zip(right) {
                     match left.cmp(right) {
                         Ordering::Less => return Ordering::Less,
@@ -88,15 +78,16 @@ impl Ord for Expression {
     }
 }
 
-impl FromStr for Expression {
-    type Err = &'static str;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (expression, rest) = Expression::parse(s.as_bytes())?;
-        if !rest.is_empty() {
-            Err("trailing characters")?;
+fn parse(input: &str) -> Result<Expression, Box<dyn Error>> {
+    match expression::<VerboseError<_>>(input) {
+        Ok((s, e)) => {
+            if !s.is_empty() {
+                Err(format!("trailing content: {}", s).into())
+            } else {
+                Ok(e)
+            }
         }
-        Ok(expression)
+        Err(e) => Err(format!("parsing error: {}", e).into()),
     }
 }
 
@@ -105,18 +96,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let dividers = ["[[2]]", "[[6]]"]
         .into_iter()
-        .map(str::parse)
+        .map(parse)
         .collect::<Result<Vec<Expression>, _>>()?;
 
     let mut expressions = lines
         .flatten()
-        .filter_map(|l| {
-            if l.is_empty() {
-                None
-            } else {
-                Some(l.parse().map_err(Box::from))
-            }
-        })
+        .filter_map(|l| if l.is_empty() { None } else { Some(parse(&l)) })
         .collect::<Result<Vec<Expression>, Box<dyn Error>>>()?;
 
     expressions.extend(dividers.clone());
