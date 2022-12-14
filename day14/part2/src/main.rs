@@ -13,6 +13,7 @@ enum Tile {
 fn main() -> Result<(), Box<dyn Error>> {
     let lines = stdin().lock().lines();
     let mut lines = lines.flatten();
+    let mut max = None;
 
     let mut map = lines.try_fold(
         HashMap::<i32, BTreeMap<i32, Tile>>::new(),
@@ -41,6 +42,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                 loop {
                     let col = map.entry(source.0).or_default();
                     col.insert(source.1, Tile::Rock);
+
+                    max = if let Some(max) = max {
+                        Some(i32::max(max, source.1))
+                    } else {
+                        Some(source.1)
+                    };
+
                     if source == destination {
                         break;
                     }
@@ -52,6 +60,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         },
     )?;
 
+    let floor = max.ok_or("no lowest point found")? + 2;
+
+    for col in map.values_mut() {
+        col.insert(floor, Tile::Rock);
+    }
+
     let result = (0..)
         .take_while(|_| {
             let mut sand = (500, 0);
@@ -61,11 +75,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                     Entry::Occupied(col) => {
                         let next = col.get().range((Excluded(sand.1), Unbounded)).next();
                         match next {
-                            None => return false,
+                            None => unreachable!("sand should fall from above the floor"),
                             Some((y, _)) => *y,
                         }
                     }
-                    Entry::Vacant(_) => return false,
+                    Entry::Vacant(col) => {
+                        col.insert(BTreeMap::from([(floor, Tile::Rock)]));
+                        sand.1 = floor - 1;
+                        break ;
+                    },
                 };
                 for dx in [-1, 1] {
                     if map
@@ -82,12 +100,16 @@ fn main() -> Result<(), Box<dyn Error>> {
                 break;
             }
 
+            if sand == (500, 0) {
+                return false
+            }
+
             map.get_mut(&sand.0)
                 .expect("column is supposed to exist")
                 .insert(sand.1, Tile::Sand);
             true
         })
-        .count();
+        .count() + 1;
 
     println!("{}", result);
     Ok(())
