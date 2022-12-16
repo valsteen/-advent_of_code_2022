@@ -99,14 +99,16 @@ fn line<'a, E: ExpressionParseError<'a, usize>>(i: &'a str) -> IResult<&'a str, 
 
 #[derive(Clone)]
 struct State {
-    position: Label,
+    my_position: Label,
+    elephant: Label,
     score: usize,
     opened: HashSet<Label>,
     time: usize,
-    moving: usize,
+    my_move: usize,
+    elephant_move: usize,
 }
 
-const TIMEOUT: usize = 29;
+const TIMEOUT: usize = 25;
 
 impl State {
     fn forward(&mut self, valves: &HashMap<Label, Valve>, time: usize) {
@@ -121,31 +123,91 @@ impl State {
             return vec![];
         }
 
-        if self.moving > 0 {
-            self.moving -= 1;
-            self.forward(valves, 1);
-            return vec![self];
+        let mut me_action = if self.my_move > 0 {
+            self.my_move -= 1;
+            true
+        } else {
+            false
+        };
+
+        let mut elephant_action = if self.elephant_move > 0 {
+            self.elephant_move -= 1;
+            true
+        } else {
+            false
+        };
+
+        if !me_action && !self.opened.contains(&self.my_position) {
+            self.opened.insert(self.my_position);
+            me_action = true;
         }
 
-        let current = valves.get(&self.position).unwrap();
+        if !elephant_action && !self.opened.contains(&self.elephant) {
+            self.opened.insert(self.elephant);
+            elephant_action = true;
+        }
 
-        if !self.opened.contains(&self.position) {
-            self.opened.insert(self.position);
+        if me_action && elephant_action {
             self.forward(valves, 1);
             return vec![self];
         }
 
         if self.opened.len() < valves.len() {
             let mut result = Vec::new();
-            for (distance, destination) in &current.destinations {
-                if !self.opened.contains(destination) && self.time + distance <= TIMEOUT {
+
+            let my_current = valves.get(&self.my_position).unwrap();
+            let elephant_current = valves.get(&self.elephant).unwrap();
+
+            let mut my_destinations = vec![];
+            let mut elephant_destinations = vec![];
+
+            if !me_action {
+                for (distance, destination) in &my_current.destinations {
+                    if !self.opened.contains(destination) && self.time + distance <= TIMEOUT {
+                        my_destinations.push(*destination);
+
+                        // let mut new_state = self.clone();
+                        // new_state.position = *destination;
+                        // new_state.moving = *distance - 1;
+                        // new_state.forward(valves, 1);
+                        // result.push(new_state);
+                    }
+                }
+            }
+
+            if my_destinations.is_empty() {
+                my_destinations.push(self.my_position)
+            }
+
+            if !elephant_action {
+                for (distance, destination) in &elephant_current.destinations {
+                    if !self.opened.contains(destination) && self.time + distance <= TIMEOUT {
+                        elephant_destinations.push(*destination);
+                    }
+                }
+            }
+
+            if elephant_destinations.is_empty() {
+                elephant_destinations.push(self.elephant)
+            }
+
+            for my_destination in my_destinations {
+                for elephant_destination in &elephant_destinations {
                     let mut new_state = self.clone();
-                    new_state.position = *destination;
-                    new_state.moving = *distance - 1;
+                    if !me_action {
+                        new_state.my_move = my_current.destinations.iter().find(|(_,label)| *label == my_destination).unwrap().0 - 1;
+                        new_state.my_position = my_destination;
+                    }
+                    if !elephant_action {
+                        new_state.elephant_move = elephant_current.destinations.iter().find(|(_,label)| *label == *elephant_destination).unwrap().0 - 1;
+                        new_state.elephant = *elephant_destination;
+                    }
+
                     new_state.forward(valves, 1);
                     result.push(new_state);
                 }
             }
+
             if !result.is_empty() {
                 return result;
             }
@@ -244,7 +306,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut max = 0;
 
     let mut states = BinaryHeap::from([State {
-        position: start,
+        elephant: start,
+        my_position: start,
         score: 0,
         opened: valves
             .values()
@@ -257,7 +320,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             })
             .collect(),
         time: 0,
-        moving: 0,
+        elephant_move: 0,
+        my_move: 0
     }]);
 
     while let Some(next) = states.pop() {
