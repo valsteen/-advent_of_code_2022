@@ -67,6 +67,16 @@ struct Valve {
     destinations: Vec<(usize, Label)>,
 }
 
+trait Distance {
+    fn distance(&self, destination: Label) -> usize;
+}
+
+impl Distance for Vec<(usize, Label)> {
+    fn distance(&self, destination: Label) -> usize {
+        self.iter().find(|(_,label)| *label == destination).unwrap().0
+    }
+}
+
 fn line<'a, E: ExpressionParseError<'a, usize>>(i: &'a str) -> IResult<&'a str, Valve, E> {
     let (_, (_, valve, _, rate, _, valves)) = all_consuming(tuple((
         tag("Valve "),
@@ -165,12 +175,6 @@ impl State {
                 for (distance, destination) in &my_current.destinations {
                     if !self.opened.contains(destination) && self.time + distance <= TIMEOUT {
                         my_destinations.push(*destination);
-
-                        // let mut new_state = self.clone();
-                        // new_state.position = *destination;
-                        // new_state.moving = *distance - 1;
-                        // new_state.forward(valves, 1);
-                        // result.push(new_state);
                     }
                 }
             }
@@ -195,11 +199,11 @@ impl State {
                 for elephant_destination in &elephant_destinations {
                     let mut new_state = self.clone();
                     if !me_action {
-                        new_state.my_move = my_current.destinations.iter().find(|(_,label)| *label == my_destination).unwrap().0 - 1;
+                        new_state.my_move = my_current.destinations.distance(my_destination) - 1;
                         new_state.my_position = my_destination;
                     }
                     if !elephant_action {
-                        new_state.elephant_move = elephant_current.destinations.iter().find(|(_,label)| *label == *elephant_destination).unwrap().0 - 1;
+                        new_state.elephant_move = elephant_current.destinations.distance(*elephant_destination) - 1;
                         new_state.elephant = *elephant_destination;
                     }
 
