@@ -1,4 +1,3 @@
-use std::collections::{BTreeSet, HashSet};
 use std::io::{stdin, BufRead};
 use std::ops::Neg;
 use std::str::FromStr;
@@ -33,87 +32,6 @@ fn number<'a, E: ExpressionParseError<'a, T>, T: Number>(i: &'a str) -> IResult<
     ))(i)
 }
 
-trait Tiles {
-    fn exclude(&mut self, tile: Tile);
-    fn add(&mut self, tile: Tile) -> bool;
-}
-
-#[derive(Hash, Ord, PartialOrd, Eq, PartialEq, Copy, Clone)]
-struct Tile {
-    x1: i32,
-    y1: i32,
-    x2: i32,
-    y2: i32,
-}
-
-impl Tile {
-    fn valid(&self) -> bool {
-        self.x1 <= self.x2 && self.y1 <= self.y2
-    }
-}
-
-impl Tiles for HashSet<Tile> {
-    fn exclude(&mut self, tile: Tile) {
-        let mut backing = HashSet::new();
-
-        self.retain(|this| {
-            let intersects = backing.add(Tile {
-                x1: this.x1,
-                y1: this.y1,
-                x2: tile.x1.min(this.x2),
-                y2: tile.y1.min(this.y2),
-            }) || backing.add(Tile {
-                x1: this.x1,
-                y1: tile.y1.max(this.y1),
-                x2: tile.x1.min(this.x2),
-                y2: tile.y2.min(this.y2),
-            }) || backing.add(Tile {
-                x1: this.x1,
-                y1: tile.y2.max(this.y1),
-                x2: tile.x1.min(this.x2),
-                y2: this.y2,
-            }) || backing.add(Tile {
-                x1: tile.x1.max(this.x1),
-                y1: this.y1,
-                x2: tile.x2.min(this.x2),
-                y2: tile.y1.min(this.y2),
-            }) || backing.add(Tile {
-                x1: tile.x1.max(this.x1),
-                y1: tile.y2.max(this.y1),
-                x2: tile.x2.min(this.x2),
-                y2: this.y2,
-            }) || backing.add(Tile {
-                x1: tile.x2.max(this.x1),
-                y1: this.y1,
-                x2: this.x2,
-                y2: tile.y1.min(this.y2),
-            }) || backing.add(Tile {
-                x1: tile.x2.max(this.x1),
-                y1: tile.y1.max(this.y1),
-                x2: this.x2,
-                y2: tile.y2.min(this.y2),
-            }) || backing.add(Tile {
-                x1: tile.x2.max(this.x1),
-                y1: tile.y2.max(this.y1),
-                x2: this.x2,
-                y2: this.y2,
-            });
-            !intersects
-        });
-
-        self.extend(backing)
-    }
-
-    fn add(&mut self, tile: Tile) -> bool {
-        if tile.valid() {
-            self.insert(tile);
-            true
-        } else {
-            false
-        }
-    }
-}
-
 fn line<'a, T: Number, E: ExpressionParseError<'a, T>>(
     i: &'a str,
 ) -> IResult<&'a str, (T, T, T, T), E> {
@@ -131,10 +49,103 @@ fn line<'a, T: Number, E: ExpressionParseError<'a, T>>(
     Ok((i, (x1, y1, x2, y2)))
 }
 
+#[derive(Debug)]
+struct Sensor {
+    location: (i64, i64),
+    distance: i64,
+}
+
+impl Sensor {
+    fn new(location: (i64, i64), beacon: (i64, i64)) -> Self {
+        Self {
+            location,
+            distance: (location.0 - beacon.0).abs() + (location.1 - beacon.1).abs(),
+        }
+    }
+    fn zero_crossings(&self) -> ((i64, i64), (i64, i64)) {
+        let (ascending, descending) =
+            zero_crossing(self.location.0 - self.distance, self.location.1);
+        let (ascending1, descending1) =
+            zero_crossing(self.location.0 + self.distance, self.location.1);
+        ((ascending, ascending1), (descending, descending1))
+    }
+
+    fn intersection_neighbours(&self, other: &Self) -> Vec<(i64, i64)> {
+        let (self_ascending, self_descending) = self.zero_crossings();
+        let (other_ascending, other_descending) = other.zero_crossings();
+        let mut intersection_neighbours = [
+            intersection(self_ascending.0, other_descending.0),
+            intersection(self_ascending.1, other_descending.0),
+            intersection(self_ascending.0, other_descending.1),
+            intersection(self_ascending.1, other_descending.1),
+            intersection(other_ascending.0, self_descending.0),
+            intersection(other_ascending.1, self_descending.0),
+            intersection(other_ascending.0, self_descending.1),
+            intersection(other_ascending.1, self_descending.1),
+        ]
+        .into_iter()
+        .flat_map(|(x, y)| get_neighbours(x, y))
+        .collect::<Vec<_>>();
+        intersection_neighbours.sort();
+        intersection_neighbours.dedup();
+        intersection_neighbours
+    }
+}
+
+// intersection of two perpendicular lines at 45 deg, first ascending, second descending, having
+// their x=0 at that given y
+fn intersection(y1: i64, y2: i64) -> (f64, f64) {
+    // crossings are correct, now check intersections
+    ((y1 - y2) as f64 / 2., y1 as f64 - ((y1 - y2) as f64 / 2.))
+}
+
+// give the two y position at x=zero, for the two lines crossing at x,y , first ascending, second descending
+fn zero_crossing(x: i64, y: i64) -> (i64, i64) {
+    (x + y, y - x)
+}
+
+fn get_neighbours(x: f64, y: f64) -> Vec<(i64, i64)> {
+    if x.fract() != 0. {
+        [
+            (x.floor() as i64, y.floor() as i64),
+            (x.floor() as i64, y.ceil() as i64),
+            (x.ceil() as i64, y.floor() as i64),
+            (x.ceil() as i64, y.ceil() as i64),
+        ]
+        .into()
+    } else {
+        [
+            (x as i64 - 1, y as i64 - 1),
+            (x as i64 - 1, y as i64 + 1),
+            (x as i64 + 1, y as i64 - 1),
+            (x as i64 + 1, y as i64 + 1),
+            (x as i64 - 1, y as i64),
+            (x as i64 + 1, y as i64),
+            (x as i64, y as i64 - 1),
+            (x as i64, y as i64 + 1),
+        ]
+        .into()
+    }
+}
+
+fn first_match(position: (i64, i64), sensors: &Vec<Sensor>) -> Option<&Sensor> {
+    for sensor in sensors {
+        let distance =
+            (position.0 - sensor.location.0).abs() + (position.1 - sensor.location.1).abs();
+        if distance <= sensor.distance {
+            return Some(sensor);
+        }
+    }
+
+    None
+}
+
+const DIM: i64 = 4000000;
+
 fn main() {
     let lines = stdin().lock().lines();
     let lines = lines.flatten().enumerate().map(|(n, s)| {
-        line::<i32, VerboseError<_>>(&s)
+        line::<i64, VerboseError<_>>(&s)
             .finish()
             .map(|(_, line)| line)
             .map_err(|err| {
@@ -148,14 +159,7 @@ fn main() {
             })
     });
 
-    let mut beacons = HashSet::new();
-
-    let mut tiles = HashSet::from([Tile {
-        x1: 0,
-        y1: 0,
-        x2: 20,
-        y2: 20,
-    }]);
+    let mut sensors = Vec::new();
 
     for line in lines {
         let (x1, y1, x2, y2) = match line {
@@ -169,16 +173,42 @@ fn main() {
             }
         };
 
-        beacons.insert((x1, y1));
-        beacons.insert((x2, y2));
-
-        tiles.exclude(Tile{
-            x1,
-            y1,
-            x2,
-            y2,
-        });
+        sensors.push(Sensor::new((x1, y1), (x2, y2)));
     }
 
-    println!("{}", intervals.count() - beacons.len());
+    for sensor1 in &sensors {
+        for sensor2 in sensors.iter().skip(1) {
+            for (x, y) in sensor1.intersection_neighbours(sensor2) {
+                if !(0..=DIM).contains(&x) || !(0..=DIM).contains(&y) {
+                    continue;
+                }
+                if first_match((x, y), &sensors).is_none() {
+                    let result = x * 4000000 + y;
+                    println!("{}", result);
+                    return;
+                }
+            }
+        }
+        let (ascending, descending) = sensor1.zero_crossings();
+        for (x, y) in [
+            (0, ascending.0),
+            (0, ascending.1),
+            (ascending.0, 0),
+            (ascending.1, 0),
+            (0, descending.0),
+            (0, descending.1),
+            (-descending.0, 0),
+            (-descending.1, 0),
+        ] {
+            if !(0..=DIM).contains(&x) || !(0..=DIM).contains(&y) {
+                continue;
+            }
+
+            if first_match((x, y), &sensors).is_none() {
+                let result = x * 4000000 + y;
+                println!("{}", result);
+                return;
+            }
+        }
+    }
 }
