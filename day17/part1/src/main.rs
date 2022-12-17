@@ -154,16 +154,8 @@ impl Blocks<usize> for Vec<(usize, usize)> {
     }
 
     fn merge_into(mut self, blocks: Vec<(usize, usize)>) -> Self {
-        let mut found_line = false;
         for (x, y) in blocks {
             self.push((x, y));
-            if self.iter().filter(|(_, sy)| *sy == y).count() == WIDTH {
-                if found_line {
-                    self.retain(|(_, sy)| *sy != y)
-                } else {
-                    found_line = true
-                }
-            }
         }
         self
     }
