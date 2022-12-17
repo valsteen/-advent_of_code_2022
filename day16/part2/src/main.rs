@@ -179,16 +179,16 @@ impl State {
                 }
             }
 
-            if my_destinations.is_empty() {
-                my_destinations.push(self.my_position)
-            }
-
             if !elephant_action {
                 for (distance, destination) in &elephant_current.destinations {
                     if !self.opened.contains(destination) && self.time + distance <= TIMEOUT {
                         elephant_destinations.push(*destination);
                     }
                 }
+            }
+
+            if my_destinations.is_empty() {
+                my_destinations.push(self.my_position)
             }
 
             if elephant_destinations.is_empty() {
@@ -332,6 +332,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         for state in next.next(&valves) {
             if state.score > max {
                 max = state.score;
+                println!("{}", max)
             }
             states.push(state)
         }
