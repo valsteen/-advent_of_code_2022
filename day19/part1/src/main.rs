@@ -214,8 +214,8 @@ impl Ord for State {
         let key = |state: &State| {
             (
                 state.time,
-                state.materials[Material::Geode],
                 state.robots[Material::Geode],
+                state.materials[Material::Geode],
                 state.materials[Material::Obsidian],
                 state.robots[Material::Obsidian],
                 state.materials[Material::Clay],
@@ -379,6 +379,10 @@ fn main() -> Result<(), String> {
         let mut blocked_send = false;
 
         while let Some((state, blueprint)) = heap.pop() {
+            if Instant::now() > instant + Duration::from_secs(5) {
+                println!("{} {:?}", blueprint, state.materials);
+                instant = Instant::now()
+            }
             match task_sender.try_send((state, blueprint)) {
                 Ok(_) => {
                     workers += working_receiver.recv().expect("working_receiver fail");
@@ -407,6 +411,7 @@ fn main() -> Result<(), String> {
 
             let candidate = state.materials[Material::Geode];
             if candidate > max[blueprint] {
+                println!("{} {}", blueprint, candidate);
                 max[blueprint] = candidate;
             }
 

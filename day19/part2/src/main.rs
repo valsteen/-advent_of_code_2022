@@ -1,29 +1,32 @@
-use std::cmp::{Ordering, Reverse};
-use std::collections::{BinaryHeap, HashSet};
-use std::fmt::Debug;
-use std::hash::{Hash, Hasher};
-use std::io::{stdin, Read};
-use std::iter::once;
-use std::num::ParseIntError;
-use std::ops::{Deref, DerefMut, Index, IndexMut};
-use std::sync::{Arc, atomic, LockResult, Mutex, MutexGuard};
-use std::sync::atomic::AtomicU16;
-use std::thread;
-use std::thread::available_parallelism;
-use std::time::{Duration, Instant};
+use std::{
+    cmp::{Ordering},
+    collections::BinaryHeap,
+    fmt::Debug,
+    hash::{Hash, Hasher},
+    io::{stdin, Read},
+    iter::once_with,
+    num::{NonZeroUsize, ParseIntError},
+    ops::{Deref, DerefMut, Index, IndexMut},
+    sync::atomic::AtomicU16,
+    sync::{atomic, Arc, Mutex},
+    thread,
+    thread::available_parallelism,
+    time::{Duration, Instant},
+};
 
 use crossbeam::channel::{bounded, unbounded};
-use nom::branch::alt;
-use nom::bytes::complete::tag;
-use nom::character::complete::{digit1, multispace0, multispace1};
-use nom::combinator::{all_consuming, map_res};
-use nom::error::{ContextError, ErrorKind, FromExternalError, ParseError, VerboseError};
-use nom::multi::separated_list1;
-use nom::sequence::tuple;
-use nom::{Finish, IResult};
+use lru::LruCache;
+use nom::{
+    branch::alt,
+    bytes::complete::tag,
+    character::complete::{digit1, multispace0, multispace1},
+    combinator::{all_consuming, map_res},
+    error::{ContextError, ErrorKind, FromExternalError, ParseError, VerboseError},
+    multi::separated_list1,
+    sequence::tuple,
+    Finish, IResult,
+};
 use rayon::prelude::*;
-
-// 3120 = too low ?
 
 const MAX_TIME: usize = 33;
 const BLUEPRINTS: usize = 3;
@@ -219,15 +222,15 @@ impl Ord for State {
     fn cmp(&self, other: &Self) -> Ordering {
         let key = |state: &State| {
             (
-                state.robots[Material::Geode] as f32 / state.time as f32,
-                state.materials[Material::Geode] as f32 / state.time as f32,
+                state.robots[Material::Geode],
+                state.time,
+                state.materials[Material::Geode],
                 state.robots[Material::Obsidian],
                 state.materials[Material::Obsidian],
                 state.robots[Material::Clay],
                 state.materials[Material::Clay],
                 state.robots[Material::Ore],
                 state.materials[Material::Ore],
-                state.time,
             )
         };
 
@@ -253,41 +256,68 @@ impl State {
                     .iter()
                     .enumerate()
                     .flat_map(|(robot_type, robot_materials)| {
-                        robot_materials
-                            .into_iter()
+                        if robot_materials
+                            .iter()
                             .enumerate()
-                            .try_fold(
-                                (robot_type, self.materials),
-                                |(robot_type, mut remaining), (material_type, cost)| {
-                                    remaining[material_type] = remaining[material_type]
-                                        .checked_sub(cost)
-                                        .ok_or("insufficient materials")?;
-                                    Ok::<_, &'static str>((robot_type, remaining))
-                                },
-                            )
-                            .map(|(robot_type, remaining)| (Some(robot_type), remaining))
-                    })
-                    .chain(once((None, self.materials)))
-                    .map(move |(robot_type, mut materials)| {
-                        for (material_type, remaining) in materials.into_iter().enumerate() {
-                            materials[material_type] = remaining + self.robots[material_type]
+                            .any(|(material_type, cost)| {
+                                *cost > 0 && self.robots[material_type] == 0
+                            })
+                        {
+                            return None;
                         }
 
-                        let robots = robot_type
-                            .map(|robot_type| {
-                                let mut robots = self.robots;
-                                robots[robot_type] += 1;
-                                robots
-                            })
-                            .unwrap_or(self.robots);
+                        let mut add_time = 1;
+
+                        let mut materials = self.materials;
+
+                        let mut materials = loop {
+                            if let Ok(remaining) = robot_materials.into_iter().enumerate().try_fold(
+                                materials,
+                                |mut remaining, (material_type, cost)| {
+                                    remaining[material_type] =
+                                        remaining[material_type].checked_sub(cost).ok_or(())?;
+                                    Ok::<_, ()>(remaining)
+                                },
+                            ) {
+                                break remaining;
+                            } else {
+                                for (material_type, remaining) in materials.iter_mut().enumerate() {
+                                    *remaining += self.robots[material_type]
+                                }
+                                add_time += 1;
+                            };
+                        };
+
+                        let mut robots = self.robots;
+                        robots[robot_type] += 1;
+
+                        for (material_type, remaining) in materials.iter_mut().enumerate() {
+                            *remaining += self.robots[material_type]
+                        }
+
+                        Some(State {
+                            blueprint: self.blueprint,
+                            materials,
+                            robots,
+                            time: self.time + add_time,
+                        })
+                    })
+                    .chain(once_with(|| {
+                        let add_time = MAX_TIME - 1 - self.time;
+
+                        let mut materials = self.materials;
+
+                        for (material_type, remaining) in materials.iter_mut().enumerate() {
+                            *remaining += self.robots[material_type] * add_time
+                        }
 
                         State {
                             blueprint: self.blueprint,
                             materials,
-                            robots,
-                            time: self.time + 1,
+                            robots: self.robots,
+                            time: self.time + add_time,
                         }
-                    }),
+                    })),
             )
             .into_iter()
             .flatten()
@@ -320,8 +350,8 @@ fn main() -> Result<(), String> {
     blueprints.truncate(3);
 
     let parallelism = available_parallelism().unwrap().get();
-    let (task_sender, task_receiver) = bounded::<(State, usize)>(parallelism*2);
-    let (result_sender, result_receiver) = unbounded::<(State, usize, bool)>();
+    let (task_sender, task_receiver) = bounded::<(State, usize)>(parallelism * 2);
+    let (result_sender, result_receiver) = unbounded::<(State, usize)>();
     let (working_sender, working_receiver) = unbounded::<i8>();
 
     for _ in 0..parallelism {
@@ -329,65 +359,29 @@ fn main() -> Result<(), String> {
         let result_sender = result_sender.clone();
         let working_sender = working_sender.clone();
         thread::spawn(move || {
-            let mut queue = vec![];
             while let Ok((state, blueprint)) = task_receiver.recv() {
                 working_sender.send(1).expect("working_sender error");
-
-                let generations = state
-                    .blueprint
-                    .0
-                    .into_iter()
-                    .enumerate()
-                    .fold([0; 4], |acc, (_, materials)| {
-                        [
-                            acc[0].max(materials[0]),
-                            acc[1].max(materials[1]),
-                            acc[2].max(materials[2]),
-                            acc[3].max(materials[3]),
-                        ]
-                    })
-                    .into_iter()
-                    .enumerate()
-                    .map(|(material, required)| required.saturating_sub(state.materials[material]))
-                    .max()
-                    .unwrap_or_default()
-                    .min(1);
-
-                queue.extend(state.next().map(|state| (state, 0)));
-
-                while let Some((state, generation)) = queue.pop() {
-                    if generation < generations {
-                        result_sender
-                            .send((state, blueprint, false))
-                            .expect("result_sender error");
-
-                        if state.time + 2 < MAX_TIME {
-                            queue.extend(state.next().map(|state| (state, generation + 1)))
-                        }
-                    } else {
-                        result_sender
-                            .send((state, blueprint, true))
-                            .expect("result_sender error");
-                    }
+                for state in state.next() {
+                    result_sender
+                        .send((state, blueprint))
+                        .expect("result_sender error");
                 }
                 working_sender.send(-1).expect("working_sender error");
             }
         });
     }
 
-    let mut max = [0;BLUEPRINTS];
-    let mut max_robots = [0;BLUEPRINTS];
-    //let mut best_at = Vec::from_iter((0..blueprints.len()).map(|_| [0; MAX_TIME]));
-    let heaps : [_;BLUEPRINTS]  =  std::array::from_fn(|_| Mutex::new(BinaryHeap::<(State, usize)>::new()));
-
-    //let mut heaps =  Vec::from_iter((0..blueprints.len()).map(|_| BinaryHeap::<(State, usize)>::new()));
+    let mut max = [0; BLUEPRINTS];
+    let heaps: [_; BLUEPRINTS] =
+        std::array::from_fn(|_| Mutex::new(BinaryHeap::<(State, usize)>::new()));
 
     for (n, blueprint) in blueprints.into_iter().enumerate() {
         let state = State::new(blueprint);
         heaps[n].lock().unwrap().push((state, n));
     }
 
-    let mut done = HashSet::new();
+    let mut done = LruCache::<(State, usize), bool>::new(NonZeroUsize::new(40000000).unwrap());
+
     let workers = Arc::new(AtomicU16::new(0));
     let mut instant = Instant::now();
     let mut shrink = Instant::now();
@@ -411,10 +405,8 @@ fn main() -> Result<(), String> {
 
                         match task_sender.try_send((state, blueprint)) {
                             Ok(_) => {
-                                //let mut workers = workers.lock().unwrap();
                                 while let Ok(working) = working_receiver.try_recv() {
                                     workers.fetch_add(working as u16, atomic::Ordering::Relaxed);
-                                    //*workers += working;
                                 }
                             }
                             Err(_) => {
@@ -440,38 +432,21 @@ fn main() -> Result<(), String> {
         let mut received = false;
 
         {
-            while let Ok((state, blueprint, process)) = result_receiver.try_recv() {
+            while let Ok((state, blueprint)) = result_receiver.try_recv() {
                 received = true;
-
-                //max[blueprint]
-                //
-                // match best_at[blueprint][state.time].cmp(&(state.materials[Material::Geode])) {
-                //     Ordering::Less => best_at[blueprint][state.time] = state.materials[Material::Geode],
-                //     Ordering::Equal => (),
-                //     Ordering::Greater => {
-                //         if state.materials[Material::Geode] * 2 < best_at[blueprint][state.time] {
-                //             continue
-                //         }
-                //     },
-                // }
-
-                let candidate = state.materials[Material::Geode];
-                if candidate > max[blueprint] {
-                    println!("{} {}", blueprint, candidate);
-                    max[blueprint] = candidate;
-                }
-
-                if state.robots[Material::Geode] > max_robots[blueprint] {
-                    max_robots[blueprint] = state.robots[Material::Geode];
-                } else if max_robots[blueprint].saturating_sub(MAX_TIME - state.time - 1) > state.robots[Material::Geode] {
+                if MAX_TIME < state.time + 1 {
                     continue;
                 }
 
+                let candidate = state.materials[Material::Geode];
+                if candidate > max[blueprint] {
+                    println!("{} {} {}", state.time, blueprint, candidate);
+                    max[blueprint] = candidate;
+                }
+
                 if !done.contains(&(state, blueprint)) {
-                    if process {
-                        heaps[blueprint].lock().unwrap().push((state, blueprint));
-                    }
-                    done.insert((state, blueprint));
+                    heaps[blueprint].lock().unwrap().push((state, blueprint));
+                    done.push((state, blueprint), true);
                 }
             }
         }
@@ -493,7 +468,10 @@ fn main() -> Result<(), String> {
         }
     };
 
-    let result = max.clone().into_iter().product::<usize>();
+    let result = max
+        .into_iter()
+        .filter(|x| *x > 0)
+        .product::<usize>();
     println!("{:?} {}", max, result);
 
     Ok(())

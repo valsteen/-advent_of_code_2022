@@ -1,0 +1,12 @@
+[package]
+name = "day19part2"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+nom = "7.1.1"
+crossbeam = "0.8.2"
+rayon = "1.6.1"
+lru = "0.8.1"
