@@ -18,16 +18,14 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     for n in 0..input.len() * 10 {
         let n = n % input.len();
-        let (delta, old_pos) = input[n];
+        let (mut delta, old_pos) = input[n];
 
-        let new_pos = if delta < 0 {
-            let delta = delta % (input.len() as i64 - 1) + (input.len() as i64) - 1;
+        delta %= input.len() as i64 - 1;
+        if delta < 0 {
+            delta += (input.len() as i64) - 1
+        }
 
-            (old_pos + delta as usize) % input.len()
-        } else {
-            let delta = delta % (input.len() as i64 - 1);
-            (old_pos + delta as usize) % input.len()
-        };
+        let new_pos = (old_pos + delta as usize) % input.len();
 
         if old_pos == new_pos {
             continue;
@@ -40,7 +38,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             input[item_to_move.1].1 = pull_index;
 
-            destinations[pull_index] = item_to_move.clone();
+            destinations[pull_index] = item_to_move;
 
             if next_index == new_pos {
                 input[n].1 = new_pos;
