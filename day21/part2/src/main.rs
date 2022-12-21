@@ -85,40 +85,12 @@ fn monkey<'a, E: ExpressionParseError<'a>>(i: &'a str) -> IResult<&'a str, Monke
     ))
 }
 
-trait Solver {
-    fn solve(&self, name: &str, cache: &mut HashMap<String, i64>) -> Result<i64, &'static str>;
-}
-
 fn solve(op: Operation, a: i64, b: i64) -> i64 {
     match op {
         Operation::Add => a + b,
         Operation::Subtract => a - b,
         Operation::Multiply => a * b,
         Operation::Divide => a / b,
-    }
-}
-
-impl Solver for HashMap<String, Monkey> {
-    fn solve(&self, name: &str, cache: &mut HashMap<String, i64>) -> Result<i64, &'static str> {
-        if let Some(result) = cache.get(name) {
-            return Ok(*result);
-        }
-
-        let expression = &self.get(name).ok_or("monkey not found")?.expression;
-
-        let solved = match expression {
-            Expression::Operation(op, a, b) => {
-                let a = self.solve(a, cache)?;
-                let b = self.solve(b, cache)?;
-                solve(*op, a, b)
-            }
-            Expression::Number(n) => {
-                cache.insert(name.to_string(), *n);
-                *n
-            }
-        };
-        cache.insert(name.to_string(), solved);
-        Ok(solved)
     }
 }
 
